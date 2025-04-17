@@ -100,7 +100,7 @@ class ConfigWidget(QWidget):
         main_layout.addWidget(search_options)
 
         horizontal_layout = QHBoxLayout()
-
+        """
         link_options = QGroupBox(_('Download link options'), self)
         link_options.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         link_layout = QVBoxLayout(link_options)
@@ -113,6 +113,8 @@ class ConfigWidget(QWidget):
             'Get the header of each site and verify that it has an \'application\' content type'))
         link_layout.addWidget(self.content_type)
         horizontal_layout.addWidget(link_options)
+        """
+        
 
         mirrors = QGroupBox(_('Mirrors'), self)
         layout = QVBoxLayout(mirrors)
@@ -122,10 +124,10 @@ class ConfigWidget(QWidget):
         horizontal_layout.addWidget(mirrors)
 
         main_layout.addLayout(horizontal_layout)
-
-        self.open_external = QCheckBox(_('Open store in external web browser'), self)
+        
+        self.open_external = QCheckBox(_('Open store in external web browser (internal web browser may not work)'), self)
         main_layout.addWidget(self.open_external)
-
+        
         self.load_settings()
 
     def _make_cbx_group(self, parent, option: SearchConfiguration, scrollbar: bool = False):
@@ -165,8 +167,8 @@ class ConfigWidget(QWidget):
 
     def load_settings(self):
         config = self.store.config
-
-        self.open_external.setChecked(config.get('open_external', False))
+        # Default it to ticked because of the internal browser bug
+        self.open_external.setChecked(config.get('open_external', True))
         self.mirrors.load_mirrors(config.get('mirrors', DEFAULT_MIRRORS))
 
         search_opts = config.get('search', {})
@@ -174,8 +176,8 @@ class ConfigWidget(QWidget):
             configuration.load(search_opts.get(configuration.config_option, configuration.default))
 
         link_opts = config.get('link', {})
-        self.url_extension.setChecked(link_opts.get('url_extension', True))
-        self.content_type.setChecked(link_opts.get('content_type', False))
+        #self.url_extension.setChecked(link_opts.get('url_extension', True))
+        #self.content_type.setChecked(link_opts.get('content_type', False))
 
     def save_settings(self):
         self.store.config['open_external'] = self.open_external.isChecked()
@@ -185,7 +187,9 @@ class ConfigWidget(QWidget):
             configuration.config_option: configuration.to_save()
             for configuration in self.search_options.values()
         }
+        """
         self.store.config['link'] = {
             'url_extension': self.url_extension.isChecked(),
             'content_type': self.content_type.isChecked()
         }
+        """

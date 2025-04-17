@@ -98,12 +98,17 @@ class AnnasArchiveStore(StorePlugin):
         if external or self.config.get('open_external', False):
             open_url(QUrl(url))
         else:
-            d = WebStoreDialog(self.gui, self.working_mirror, parent, url)
-            d.setWindowTitle(self.name)
-            d.set_tags(self.config.get('tags', ''))
-            d.exec()
+            try:
+                d = WebStoreDialog(self.gui, self.working_mirror, parent, url)
+                d.setWindowTitle(self.name)
+                d.set_tags(self.config.get('tags', ''))
+                d.exec()
+            except Exception:
+                # WebStoreDialog doesn't work, at least not on my device
+                open_url(Qurl(url))
 
     def get_details(self, search_result: SearchResult, timeout=60):
+        print("Getting details")
         if not search_result.formats:
             return
 
@@ -120,11 +125,12 @@ class AnnasArchiveStore(StorePlugin):
         for link in doc.xpath('//div[@id="md5-panel-downloads"]/ul[contains(@class, "list-inside")]/li/a[contains(@class, "js-download-link")]'):
             url = link.get('href')
             link_text = ''.join(link.itertext())
-
+            
             if link_text == 'Libgen.li':
-                url = self._get_libgen_link(url, br)
+                # Cloudflare "Phishing Warning" popups make this impossible for us
+                continue
             elif link_text == 'Libgen.rs Fiction' or link_text == 'Libgen.rs Non-Fiction':
-                url = self._get_libgen_nonfiction_link(url, br)
+                url = self._get_libgen_link(url, br)
             elif link_text.startswith('Sci-Hub'):
                 url = self._get_scihub_link(url, br)
             elif link_text == 'Z-Library':
@@ -136,38 +142,48 @@ class AnnasArchiveStore(StorePlugin):
                 continue
 
             # Takes longer, but more accurate
-            if content_type:
-                try:
+            # Get rid of extension checking because basically none have extensions...
+            try:
+                # Because Z-Lib downloads use hashes, we can't check them :(
+                if "z-lib" not in url:
                     with urlopen(Request(url, method='HEAD'), timeout=timeout) as resp:
                         if resp.info().get_content_maintype() != 'application':
                             continue
-                except (HTTPError, URLError, TimeoutError, RemoteDisconnected):
-                    pass
-            elif url_extension:
-                # Speeds it up by checking the extension of the url.
-                # Might miss a direct url that doesn't end with the extension
-                params = url.find("?")
-                if params < 0:
-                    params = None
-                if url.endswith(_format, 0, params):
-                    continue
+            except (HTTPError, URLError, TimeoutError, RemoteDisconnected):
+                pass
+            
             search_result.downloads[f"{link_text}.{search_result.formats}"] = url
 
     @staticmethod
     def _get_libgen_link(url: str, br) -> str:
         with closing(br.open(url)) as resp:
             doc = html.fromstring(resp.read())
+        # Fiction
+        url = ''.join(doc.xpath('//ul[contains(@class, "record_mirrors")]/li[1]/a/@href'))
+        
+        # Handle non-fiction
+        if not url:
+            url = ''.join(doc.xpath('//a[@title="Libgen & IPFS & Tor"]/@href'))
+        # Replace http with https because it doesn't work without it
+        url = url.replace("http", "https")
+        
+        # Open the new books.ms url and look for the 'get' button there
+        with closing(br.open(url)) as resp:
+            doc = html.fromstring(resp.read())
             scheme, _, host, _ = resp.geturl().split('/', 3)
-        url = ''.join(doc.xpath('//a[h2[text()="GET"]]/@href'))
-        return f"{scheme}//{host}/{url}"
-
+        url = ''.join(doc.xpath('//div[@id="download"]/h2[1]/a/@href'))
+        return url
+    
+    # Doesn't work...
+    """
     @staticmethod
     def _get_libgen_nonfiction_link(url: str, br) -> str:
         with closing(br.open(url)) as resp:
             doc = html.fromstring(resp.read())
         url = ''.join(doc.xpath('//h2/a[text()="GET"]/@href'))
         return url
-
+    """
+    # Works
     @staticmethod
     def _get_scihub_link(url, br):
         with closing(br.open(url)) as resp:
@@ -176,7 +192,8 @@ class AnnasArchiveStore(StorePlugin):
         url = ''.join(doc.xpath('//embed[@id="pdf"]/@src'))
         if url:
             return scheme + url
-
+    
+    # With Z-Lib, every download has a hash
     @staticmethod
     def _get_zlib_link(url, br):
         with closing(br.open(url)) as resp:
@@ -184,7 +201,8 @@ class AnnasArchiveStore(StorePlugin):
             scheme, _, host, _ = resp.geturl().split('/', 3)
         url = ''.join(doc.xpath('//a[contains(@class, "addDownloadedBook")]/@href'))
         if url:
-            return f"{scheme}//{host}/{url}"
+            # The url already has a leading /
+            return f"{scheme}//{host}{url}"
 
     def _get_url(self, md5):
         return f"{self.working_mirror}/md5/{md5}"
